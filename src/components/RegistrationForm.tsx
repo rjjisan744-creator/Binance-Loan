@@ -100,7 +100,7 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
     setIsLoading(true);
 
     try {
-      // 1. Call real Supabase Auth to dispatch official OTP code to real email inbox
+      // 1. Trigger real Supabase Auth signInWithOtp to send 6-digit OTP to user's real email inbox
       const { error: otpError } = await supabase.auth.signInWithOtp({
         email: email.trim().toLowerCase(),
         options: {
@@ -109,10 +109,10 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
       });
 
       if (otpError) {
-        throw otpError;
+        throw new Error(otpError.message);
       }
 
-      // 2. Register pending account credentials with backend
+      // 2. Submit registration credentials to backend to prepare account security state
       const response = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -125,12 +125,12 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
         }),
       });
 
+      const data = await response.json();
       if (!response.ok) {
-        const data = await response.json();
         throw new Error(data.error || 'Failed to submit registration.');
       }
 
-      // Transition to Email Verification screen
+      // 3. Transition to Email Verification screen
       onRegistrationSuccess(email.trim().toLowerCase());
     } catch (err: any) {
       setErrorMessage(err.message || 'An unexpected error occurred during registration.');

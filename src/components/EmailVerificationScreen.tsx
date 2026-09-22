@@ -100,15 +100,33 @@ export const EmailVerificationScreen: React.FC<EmailVerificationScreenProps> = (
     setErrorMessage(null);
 
     try {
-      // 1. Call real Supabase Auth to verify OTP entered by user
-      const { data: sbData, error: sbError } = await supabase.auth.verifyOtp({
+      // 1. Call real Supabase Auth verifyOtp
+      let sbData: any = null;
+      let sbError: any = null;
+
+      const verifyRes = await supabase.auth.verifyOtp({
         email: email.trim().toLowerCase(),
         token: fullCode,
         type: 'email',
       });
 
-      if (sbError) {
-        throw sbError;
+      if (verifyRes.data?.user && !verifyRes.error) {
+        sbData = verifyRes.data;
+      } else {
+        const signupRes = await supabase.auth.verifyOtp({
+          email: email.trim().toLowerCase(),
+          token: fullCode,
+          type: 'signup',
+        });
+        if (signupRes.data?.user && !signupRes.error) {
+          sbData = signupRes.data;
+        } else {
+          sbError = verifyRes.error || signupRes.error;
+        }
+      }
+
+      if (sbError && !sbData?.user) {
+        throw new Error(sbError.message || 'Invalid or expired verification code.');
       }
 
       // 2. Synchronize verified account state with backend
@@ -118,26 +136,30 @@ export const EmailVerificationScreen: React.FC<EmailVerificationScreenProps> = (
         body: JSON.stringify({
           email: email.trim().toLowerCase(),
           code: fullCode,
-          supabaseUserId: sbData.user?.id,
-          supabaseToken: sbData.session?.access_token,
+          supabaseUserId: sbData?.user?.id,
+          supabaseToken: sbData?.session?.access_token,
         }),
       });
 
       const data = await response.json();
 
-      if (sbData.session?.access_token) {
+      if (!response.ok && !sbData?.user) {
+        throw new Error(data.error || sbError?.message || 'Invalid or expired verification code.');
+      }
+
+      if (sbData?.session?.access_token) {
         localStorage.setItem('binance_loan_session_token', sbData.session.access_token);
       } else if (data.sessionToken) {
         localStorage.setItem('binance_loan_session_token', data.sessionToken);
       }
 
       const activeUser = data.user || {
-        id: sbData.user?.id || 'usr_' + Date.now(),
+        id: sbData?.user?.id || 'usr_' + Date.now(),
         email: email.trim().toLowerCase(),
         role: 'user',
         kycStatus: 'unverified',
         borrowingLimit: 500,
-        sessionToken: sbData.session?.access_token || data.sessionToken,
+        sessionToken: sbData?.session?.access_token || data.sessionToken,
       };
 
       setSuccessMessage(data.message || t.verificationSuccessTitle);
@@ -152,7 +174,7 @@ export const EmailVerificationScreen: React.FC<EmailVerificationScreenProps> = (
     }
   };
 
-  // Resend code handler
+  // Resend code handler: Real Supabase signInWithOtp call to email inbox
   const handleResend = async () => {
     if (resendCooldown > 0 || isResending) return;
 
@@ -160,22 +182,33 @@ export const EmailVerificationScreen: React.FC<EmailVerificationScreenProps> = (
     setErrorMessage(null);
 
     try {
-      // Real Supabase Auth call to send actual OTP through Supabase email
-      const { error: resendError } = await supabase.auth.signInWithOtp({
+      // 1. Call real Supabase Auth signInWithOtp to send actual OTP email
+      const { error: sbError } = await supabase.auth.signInWithOtp({
         email: email.trim().toLowerCase(),
         options: {
           shouldCreateUser: true,
         },
       });
 
-      if (resendError) {
-        throw resendError;
+      if (sbError) {
+        throw new Error(sbError.message || 'Failed to send OTP via Supabase.');
+      }
+
+      // 2. Also inform backend for session registration bookkeeping
+      try {
+        await fetch('/api/auth/resend-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: email.trim().toLowerCase() }),
+        });
+      } catch {
+        // Backend notification non-blocking
       }
 
       setResendCooldown(60);
       setDigits(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
-      setSuccessMessage(t.codeSentToast || 'A new verification code has been dispatched to your email.');
+      setSuccessMessage(t.codeSentToast || 'A new verification code has been dispatched to your email inbox.');
       setTimeout(() => setSuccessMessage(null), 4000);
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to resend code. Please try again.');
@@ -219,6 +252,18 @@ export const EmailVerificationScreen: React.FC<EmailVerificationScreenProps> = (
             {t.verificationInstructions}{' '}
             <strong className="text-[#EAECEF]">Account is not active</strong> until verified.
           </span>
+        </div>
+
+        {/* Real email inbox instruction */}
+        <div className="mb-6 rounded-xl border border-[#2B313A] bg-[#0B0E11] p-3.5 text-xs text-[#848E9C]">
+          <div className="flex items-center space-x-2 text-[#EAECEF] font-semibold mb-1">
+            <Mail className="h-4 w-4 text-[#F0B90B]" />
+            <span>Check Your Email Inbox</span>
+          </div>
+          <p className="text-[11px] leading-relaxed">
+            Supabase has sent a 6-digit confirmation code directly to{' '}
+            <strong className="text-[#EAECEF]">{email}</strong>. Please check your inbox or spam folder.
+          </p>
         </div>
 
         {/* Error message */}

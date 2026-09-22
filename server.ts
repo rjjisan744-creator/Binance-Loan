@@ -651,6 +651,8 @@ app.post('/api/auth/register', async (req, res) => {
     let code = generateVerificationCode();
     let actionLink: string | undefined;
 
+    let verificationType = 'signup';
+
     // Call Supabase Auth OTP generator (using admin.generateLink to register user & generate official OTP)
     if (isServerSupabaseConfigured()) {
       try {
@@ -663,7 +665,8 @@ app.post('/api/auth/register', async (req, res) => {
           if (genResult.data?.properties?.email_otp) {
             code = genResult.data.properties.email_otp;
             actionLink = genResult.data.properties.action_link;
-            console.log(`[Supabase Auth] Official OTP generated for ${normalizedEmail}: ${code}`);
+            verificationType = genResult.data.properties.verification_type || 'signup';
+            console.log(`[Supabase Auth] Official OTP generated for ${normalizedEmail}: ${code} (${verificationType})`);
           }
         }
       } catch (sbErr: any) {
@@ -727,6 +730,8 @@ app.post('/api/auth/resend-code', async (req, res) => {
     let newCode = generateVerificationCode();
     let actionLink: string | undefined;
 
+    let resendVerificationType = 'signup';
+
     // Call Supabase Auth OTP generator
     if (isServerSupabaseConfigured()) {
       try {
@@ -739,7 +744,8 @@ app.post('/api/auth/resend-code', async (req, res) => {
           if (genResult.data?.properties?.email_otp) {
             newCode = genResult.data.properties.email_otp;
             actionLink = genResult.data.properties.action_link;
-            console.log(`[Supabase Auth] Official OTP resent for ${normalizedEmail}: ${newCode}`);
+            resendVerificationType = genResult.data.properties.verification_type || 'signup';
+            console.log(`[Supabase Auth] Official OTP resent for ${normalizedEmail}: ${newCode} (${resendVerificationType})`);
           }
         }
       } catch (sbErr: any) {
@@ -782,18 +788,22 @@ app.post('/api/auth/verify-email', async (req, res) => {
       isCodeValid = true;
     }
 
-    // Also attempt verification against Supabase Auth if not matched
+    // Also attempt verification against Supabase Auth across types if not matched
     if (!isCodeValid && isServerSupabaseConfigured() && trimmedCode) {
       try {
         const supabase = getServerSupabase();
         if (supabase) {
-          const sbVerify = await supabase.auth.verifyOtp({
-            email: normalizedEmail,
-            token: trimmedCode,
-            type: 'email',
-          });
-          if (sbVerify.data?.user && !sbVerify.error) {
-            isCodeValid = true;
+          const typesToTry: ('signup' | 'email' | 'magiclink')[] = ['signup', 'email', 'magiclink'];
+          for (const verType of typesToTry) {
+            const sbVerify = await supabase.auth.verifyOtp({
+              email: normalizedEmail,
+              token: trimmedCode,
+              type: verType,
+            });
+            if (sbVerify.data?.user && !sbVerify.error) {
+              isCodeValid = true;
+              break;
+            }
           }
         }
       } catch (sbErr: any) {
