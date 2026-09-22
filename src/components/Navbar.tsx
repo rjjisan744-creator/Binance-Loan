@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, Globe, ChevronDown, Lock } from 'lucide-react';
+import { Globe, ChevronDown, Lock } from 'lucide-react';
 import { Country, LanguageCode, VerifiedUser } from '../types';
 import { SUPPORTED_LANGUAGES } from '../data/countries';
 import { TRANSLATIONS } from '../data/translations';
@@ -203,12 +203,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </div>
               </>
             )}
-          </div>
-
-          {/* Security Status Badge */}
-          <div className="hidden sm:flex items-center space-x-1.5 rounded-lg bg-[#0ECB81]/10 px-2.5 py-1.5 text-xs font-medium text-[#0ECB81]">
-            <ShieldCheck className="h-4 w-4" />
-            <span className="text-[11px] font-semibold">SAFU Protected</span>
           </div>
         </div>
       </div>

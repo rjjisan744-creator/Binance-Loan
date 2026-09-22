@@ -24,7 +24,7 @@ interface AuthScreenProps {
   sessionProfile: UserSessionProfile | null;
   onBackToCountrySelect: () => void;
   onResetSession: () => void;
-  onRegistrationInitiated: (email: string, serverData: { previewUrl?: string | null; codePreview?: string }) => void;
+  onRegistrationInitiated: (email: string) => void;
   onLoginSuccess?: (user: any) => void;
   onRequireEmailVerification?: (email: string) => void;
 }
@@ -310,55 +310,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                         <span>{t.loginAction}</span>
                       )}
                     </button>
-
-                    {/* RBAC Quick Test Selector */}
-                    <div className="mt-4 rounded-xl border border-[#2B313A] bg-[#0B0E11] p-3.5 space-y-2 text-xs">
-                      <div className="flex items-center justify-between text-[#848E9C]">
-                        <span className="font-semibold text-[#EAECEF] flex items-center space-x-1.5">
-                          <Shield className="h-3.5 w-3.5 text-[#F0B90B]" />
-                          <span>RBAC Test Credentials:</span>
-                        </span>
-                        <span className="text-[10px] text-[#848E9C]">Click to pre-fill</span>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setLoginEmail('codadal067@gmail.com');
-                            setLoginPassword('Admin@Binance2026!');
-                            setLoginError(null);
-                          }}
-                          className="text-left rounded-lg border border-[#F0B90B]/30 bg-[#F0B90B]/5 p-2 hover:bg-[#F0B90B]/15 transition-colors cursor-pointer"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-[#EAECEF] text-[11px]">Administrator</span>
-                            <span className="rounded bg-[#F0B90B]/20 px-1 py-0.5 text-[9px] font-bold text-[#F0B90B]">role: admin</span>
-                          </div>
-                          <div className="font-mono text-[10px] text-[#848E9C] truncate">codadal067@gmail.com</div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setLoginEmail('trader@binance.com');
-                            setLoginPassword('User@Binance2026!');
-                            setLoginError(null);
-                          }}
-                          className="text-left rounded-lg border border-[#2B313A] bg-[#181A20] p-2 hover:border-[#848E9C] transition-colors cursor-pointer"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-[#EAECEF] text-[11px]">Standard User</span>
-                            <span className="rounded bg-[#2B313A] px-1 py-0.5 text-[9px] font-bold text-[#848E9C]">role: user</span>
-                          </div>
-                          <div className="font-mono text-[10px] text-[#848E9C] truncate">trader@binance.com</div>
-                        </button>
-                      </div>
-
-                      <p className="text-[10px] text-[#848E9C] leading-normal pt-1 border-t border-[#2B313A]/60">
-                        * Note: Admin privileges are granted strictly by the backend database role, not by email matching.
-                      </p>
-                    </div>
 
                     <div className="pt-2 text-center text-xs text-[#848E9C]">
                       <span>{t.noAccountPrompt} </span>

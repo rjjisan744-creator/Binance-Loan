@@ -1,8 +1,8 @@
 import express from 'express';
 import path from 'path';
 import crypto from 'crypto';
-import nodemailer, { type Transporter } from 'nodemailer';
 import { createServer as createViteServer } from 'vite';
+import { getServerSupabase, isServerSupabaseConfigured } from './src/lib/supabaseServer.js';
 
 const app = express();
 const PORT = 3000;
@@ -168,7 +168,16 @@ export interface LoanApplicationRecord {
   additionalUnderwritingNotes?: string;
   accuracyConfirmed: boolean;
   applicantLegalSignature: string;
-  status: 'submitted' | 'under_review' | 'approved' | 'declined' | 'requires_more_info';
+  status:
+    | 'draft'
+    | 'submitted'
+    | 'under_review'
+    | 'additional_info_required'
+    | 'requires_more_info'
+    | 'approved'
+    | 'rejected'
+    | 'declined'
+    | 'cancelled';
   submittedAt: string;
   reviewedAt?: string;
   reviewedBy?: string;
@@ -290,6 +299,16 @@ function hashPassword(password: string, salt?: string): { hash: string; salt: st
   return { hash, salt: generatedSalt };
 }
 
+// Generate authentic 9-digit Binance User ID (UID)
+function generateNumericUID(): string {
+  return (100000000 + crypto.randomInt(900000000)).toString();
+}
+
+const ADMIN_UID = '100008899';
+const TRADER_UID = '204859182';
+const ELENA_UID = '319401824';
+const ALEX_UID = '491028491';
+
 // =======================================================================
 // EXPLICIT ROLE-BASED ACCESS CONTROL (RBAC) DATABASE INITIALIZATION
 // NOTE: As strictly mandated, codadal067@gmail.com does NOT automatically receive
@@ -301,7 +320,7 @@ const adminSalt = crypto.randomBytes(16).toString('hex');
 const adminHash = crypto.pbkdf2Sync('Admin@Binance2026!', adminSalt, 10000, 64, 'sha512').toString('hex');
 
 verifiedUsers.set('codadal067@gmail.com', {
-  id: 'usr_admin_001',
+  id: ADMIN_UID,
   email: 'codadal067@gmail.com',
   role: 'admin', // EXPLICITLY ASSIGNED ADMIN ROLE IN THE BACKEND DATABASE
   passwordHash: adminHash,
@@ -332,8 +351,8 @@ verifiedUsers.set('codadal067@gmail.com', {
 });
 
 // Seed encrypted vault record for Admin
-kycVault.set('usr_admin_001', {
-  userId: 'usr_admin_001',
+kycVault.set(ADMIN_UID, {
+  userId: ADMIN_UID,
   email: 'codadal067@gmail.com',
   encryptedDocumentNumber: encryptKycField('BN-ADMIN-998842'),
   encryptedPassportNumber: encryptKycField('US-PASS-99884210'),
@@ -346,7 +365,7 @@ const standardUserSalt = crypto.randomBytes(16).toString('hex');
 const standardUserHash = crypto.pbkdf2Sync('User@Binance2026!', standardUserSalt, 10000, 64, 'sha512').toString('hex');
 
 verifiedUsers.set('trader@binance.com', {
-  id: 'usr_trader_002',
+  id: TRADER_UID,
   email: 'trader@binance.com',
   role: 'user', // EXPLICITLY ASSIGNED USER ROLE
   passwordHash: standardUserHash,
@@ -376,8 +395,8 @@ verifiedUsers.set('trader@binance.com', {
   },
 });
 
-kycVault.set('usr_trader_002', {
-  userId: 'usr_trader_002',
+kycVault.set(TRADER_UID, {
+  userId: TRADER_UID,
   email: 'trader@binance.com',
   encryptedDocumentNumber: encryptKycField('GB-948102948'),
   encryptedPassportNumber: encryptKycField('GB-948102948'),
@@ -386,11 +405,11 @@ kycVault.set('usr_trader_002', {
 });
 
 // Seed compliant encrypted documents for trader@binance.com in vault
-const samplePdfBase64 = 'data:application/pdf;base64,JVBERi0xLjQKJcfsj6IKMSAwIG9iago8PC9UeXBlL0NhdGFsb2cvUGFnZXMgMiAwIFI+PmVuZG9iagoyIDAgb2JqCjw8L1R5cGUvUGFnZXMvS2lkc1szIDAgUl0vQ291bnQgMT4+ZW5kb2JqCjMgMCBvYmoKPDwvVHlwZS9QYWdlL1BhcmVudCAyIDAgUi9NZWRpYUJveFswIDAgNjEyIDc5Ml0+PmVuZG9iagp4cmVmCjAgNAowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMTUgMDAwMDAgbiAKMDAwMDAwMDA2MCAwMDAwMCBuIAowMDAwMDAwMTE1IDAwMDAwIG4gCnRyYWlsZXIKPDwvU2l6ZSA0L1Jvb3QgMSAwIFI+PgpzdGFydHhyZWYKMTc5CiUlRU9G';
+const compliancePdfBase64 = 'data:application/pdf;base64,JVBERi0xLjQKJcfsj6IKMSAwIG9iago8PC9UeXBlL0NhdGFsb2cvUGFnZXMgMiAwIFI+PmVuZG9iagoyIDAgb2JqCjw8L1R5cGUvUGFnZXMvS2lkc1szIDAgUl0vQ291bnQgMT4+ZW5kb2JqCjMgMCBvYmoKPDwvVHlwZS9QYWdlL1BhcmVudCAyIDAgUi9NZWRpYUJveFswIDAgNjEyIDc5Ml0+PmVuZG9iagp4cmVmCjAgNAowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMTUgMDAwMDAgbiAKMDAwMDAwMDA2MCAwMDAwMCBuIAowMDAwMDAwMTE1IDAwMDAwIG4gCnRyYWlsZXIKPDwvU2l6ZSA0L1Jvb3QgMSAwIFI+PgpzdGFydHhyZWYKMTc5CiUlRU9G';
 
 loanDocumentsVault.set('DOC-2026-1001', {
   id: 'DOC-2026-1001',
-  userId: 'usr_trader_002',
+  userId: TRADER_UID,
   userEmail: 'trader@binance.com',
   category: 'identity_document',
   categoryTitle: REQUIRED_CATEGORIES.identity_document.title,
@@ -403,8 +422,8 @@ loanDocumentsVault.set('DOC-2026-1001', {
   status: 'verified',
   isEncrypted: true,
   encryptionAlgorithm: 'AES-256-GCM',
-  checksumSha256: crypto.createHash('sha256').update(samplePdfBase64).digest('hex'),
-  encryptedPayload: encryptKycField(samplePdfBase64),
+  checksumSha256: crypto.createHash('sha256').update(compliancePdfBase64).digest('hex'),
+  encryptedPayload: encryptKycField(compliancePdfBase64),
   reviewNotes: 'Identity confirmed against UK Passport database. Expiry 2032.',
   reviewedBy: 'Compliance Lead Officer',
   reviewedAt: new Date(Date.now() - 1 * 86400000).toISOString(),
@@ -412,7 +431,7 @@ loanDocumentsVault.set('DOC-2026-1001', {
 
 loanDocumentsVault.set('DOC-2026-1002', {
   id: 'DOC-2026-1002',
-  userId: 'usr_trader_002',
+  userId: TRADER_UID,
   userEmail: 'trader@binance.com',
   category: 'address_verification',
   categoryTitle: REQUIRED_CATEGORIES.address_verification.title,
@@ -425,8 +444,8 @@ loanDocumentsVault.set('DOC-2026-1002', {
   status: 'verified',
   isEncrypted: true,
   encryptionAlgorithm: 'AES-256-GCM',
-  checksumSha256: crypto.createHash('sha256').update(samplePdfBase64).digest('hex'),
-  encryptedPayload: encryptKycField(samplePdfBase64),
+  checksumSha256: crypto.createHash('sha256').update(compliancePdfBase64).digest('hex'),
+  encryptedPayload: encryptKycField(compliancePdfBase64),
   reviewNotes: 'Verified matching residential address in London.',
   reviewedBy: 'Compliance Lead Officer',
   reviewedAt: new Date(Date.now() - 1 * 86400000).toISOString(),
@@ -434,7 +453,7 @@ loanDocumentsVault.set('DOC-2026-1002', {
 
 loanDocumentsVault.set('DOC-2026-1003', {
   id: 'DOC-2026-1003',
-  userId: 'usr_trader_002',
+  userId: TRADER_UID,
   userEmail: 'trader@binance.com',
   category: 'income_verification',
   categoryTitle: REQUIRED_CATEGORIES.income_verification.title,
@@ -447,8 +466,8 @@ loanDocumentsVault.set('DOC-2026-1003', {
   status: 'uploaded',
   isEncrypted: true,
   encryptionAlgorithm: 'AES-256-GCM',
-  checksumSha256: crypto.createHash('sha256').update(samplePdfBase64).digest('hex'),
-  encryptedPayload: encryptKycField(samplePdfBase64),
+  checksumSha256: crypto.createHash('sha256').update(compliancePdfBase64).digest('hex'),
+  encryptedPayload: encryptKycField(compliancePdfBase64),
 });
 
 // Seed a user in Pending KYC status (Elena Rostova) for testing the Admin Review flow immediately!
@@ -456,7 +475,7 @@ const pendingUserSalt = crypto.randomBytes(16).toString('hex');
 const pendingUserHash = crypto.pbkdf2Sync('User@Binance2026!', pendingUserSalt, 10000, 64, 'sha512').toString('hex');
 
 verifiedUsers.set('elena.rostova@crypto.eu', {
-  id: 'usr_elena_003',
+  id: ELENA_UID,
   email: 'elena.rostova@crypto.eu',
   role: 'user',
   passwordHash: pendingUserHash,
@@ -483,8 +502,8 @@ verifiedUsers.set('elena.rostova@crypto.eu', {
   },
 });
 
-kycVault.set('usr_elena_003', {
-  userId: 'usr_elena_003',
+kycVault.set(ELENA_UID, {
+  userId: ELENA_UID,
   email: 'elena.rostova@crypto.eu',
   encryptedDocumentNumber: encryptKycField('DE-940244918'),
   submittedAt: new Date(Date.now() - 600000).toISOString(),
@@ -496,7 +515,7 @@ const moreInfoUserSalt = crypto.randomBytes(16).toString('hex');
 const moreInfoUserHash = crypto.pbkdf2Sync('User@Binance2026!', moreInfoUserSalt, 10000, 64, 'sha512').toString('hex');
 
 verifiedUsers.set('alex.zhang@asia-hedge.sg', {
-  id: 'usr_alex_004',
+  id: ALEX_UID,
   email: 'alex.zhang@asia-hedge.sg',
   role: 'user',
   passwordHash: moreInfoUserHash,
@@ -525,8 +544,8 @@ verifiedUsers.set('alex.zhang@asia-hedge.sg', {
   },
 });
 
-kycVault.set('usr_alex_004', {
-  userId: 'usr_alex_004',
+kycVault.set(ALEX_UID, {
+  userId: ALEX_UID,
   email: 'alex.zhang@asia-hedge.sg',
   encryptedDocumentNumber: encryptKycField('SG-E8473819K'),
   encryptedPassportNumber: encryptKycField('SG-E8473819K'),
@@ -537,7 +556,7 @@ kycVault.set('usr_alex_004', {
 // Seed an initial loan application for David Sterling (trader@binance.com), whose KYC is Approved
 loanApplications.set('APP-2026-1082', {
   id: 'APP-2026-1082',
-  userId: 'usr_trader_002',
+  userId: TRADER_UID,
   userEmail: 'trader@binance.com',
   requestedAmount: 25000,
   currency: 'USDT',
@@ -576,52 +595,6 @@ loanApplications.set('APP-2026-1082', {
 // Secure 6-digit verification code generator
 function generateVerificationCode(): string {
   return crypto.randomInt(100000, 999999).toString();
-}
-
-// Nodemailer transport setup (Configurable via SMTP, or auto-generating Ethereal test account)
-let mailTransporter: Transporter | null = null;
-let etherealAccountInfo: string | null = null;
-
-async function getTransporter(): Promise<Transporter> {
-  if (mailTransporter) return mailTransporter;
-
-  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
-    mailTransporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT) || 587,
-      secure: Number(process.env.SMTP_PORT) === 465,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
-    return mailTransporter;
-  }
-
-  // Fallback: Create ethereal test account for realistic email testing
-  try {
-    const testAccount = await nodemailer.createTestAccount();
-    etherealAccountInfo = testAccount.user;
-    mailTransporter = nodemailer.createTransport({
-      host: 'smtp.ethereal.email',
-      port: 587,
-      secure: false,
-      auth: {
-        user: testAccount.user,
-        pass: testAccount.pass,
-      },
-    });
-    return mailTransporter;
-  } catch (err) {
-    console.warn('Ethereal setup failed, using mock logger transporter', err);
-    // Dummy transport if ethereal is not reachable
-    mailTransporter = nodemailer.createTransport({
-      streamTransport: true,
-      newline: 'unix',
-      buffer: true,
-    });
-    return mailTransporter;
-  }
 }
 
 // 1. API: Register endpoint (validates, stores pending unverified state, sends email)
@@ -690,64 +663,13 @@ app.post('/api/auth/register', async (req, res) => {
       attempts: 0,
     });
 
-    // Send verification email via Nodemailer
-    let previewUrl: string | null = null;
-    let sendSuccess = false;
-
-    try {
-      const transporter = await getTransporter();
-      const mailOptions = {
-        from: process.env.SMTP_FROM || '"Binance Loan Security" <no-reply@binance-loan.com>',
-        to: normalizedEmail,
-        subject: `${code} is your Binance Loan registration verification code`,
-        text: `Welcome to Binance Loan.\n\nYour 6-digit registration verification code is: ${code}\n\nThis code will expire in 10 minutes. For your security, never share this code with anyone.\n\nIf you did not request this code, please ignore this email.`,
-        html: `
-          <div style="font-family: Arial, sans-serif; background-color: #0B0E11; color: #EAECEF; padding: 30px; border-radius: 12px; max-width: 540px; margin: 0 auto; border: 1px solid #2B313A;">
-            <div style="text-align: center; margin-bottom: 24px;">
-              <div style="display: inline-block; background-color: #181A20; border: 1px solid #2B313A; padding: 12px; border-radius: 10px;">
-                <span style="font-size: 20px; font-weight: 800; color: #EAECEF; letter-spacing: -0.5px;">BINANCE</span>
-                <span style="background-color: #F0B90B; color: #000; font-size: 11px; font-weight: 900; padding: 2px 6px; border-radius: 4px; margin-left: 6px;">LOAN</span>
-              </div>
-            </div>
-            <h2 style="color: #EAECEF; font-size: 20px; text-align: center; margin-top: 0;">Email Verification Code</h2>
-            <p style="color: #848E9C; font-size: 14px; line-height: 1.6; text-align: center;">
-              You are registering for a Binance Loan account. Please use the 6-digit verification code below to complete your registration.
-            </p>
-            <div style="background-color: #181A20; border: 2px dashed #F0B90B; border-radius: 10px; padding: 18px; text-align: center; margin: 24px 0;">
-              <span style="font-family: monospace; font-size: 32px; font-weight: 800; letter-spacing: 8px; color: #F0B90B;">${code}</span>
-            </div>
-            <p style="color: #848E9C; font-size: 12px; line-height: 1.5;">
-              • Valid for <strong>10 minutes</strong>.<br />
-              • Your account will not be created until you confirm this code.<br />
-              • Never share this code with anyone, including Binance Loan agents.
-            </p>
-            <hr style="border: none; border-top: 1px solid #2B313A; margin: 24px 0;" />
-            <p style="color: #5E6673; font-size: 11px; text-align: center; margin-bottom: 0;">
-              © 2026 Binance Loan Platform. Automated notification.
-            </p>
-          </div>
-        `,
-      };
-
-      const info = await transporter.sendMail(mailOptions);
-      sendSuccess = true;
-      const testUrl = nodemailer.getTestMessageUrl(info);
-      if (testUrl) {
-        previewUrl = testUrl.toString();
-      }
-      console.log(`[Binance Loan] Verification email sent to ${normalizedEmail}. Code: ${code}`);
-    } catch (mailError) {
-      console.error('[Binance Loan] Mail send failed:', mailError);
-    }
+    console.log(`[Binance Loan Auth] Registration code generated for ${normalizedEmail}: ${code}`);
 
     return res.json({
       success: true,
-      message: 'Verification code sent to your email address.',
+      message: 'Verification code generated for your account registration.',
       email: normalizedEmail,
       expiresAt,
-      // For developer / preview convenience in demo environments:
-      previewUrl,
-      codePreview: code,
     });
   } catch (error: any) {
     console.error('[Binance Loan] Register error:', error);
@@ -785,28 +707,12 @@ app.post('/api/auth/resend-code', async (req, res) => {
     pending.expiresAt = Date.now() + 10 * 60 * 1000;
     pending.attempts = 0;
 
-    let previewUrl: string | null = null;
-    try {
-      const transporter = await getTransporter();
-      const info = await transporter.sendMail({
-        from: process.env.SMTP_FROM || '"Binance Loan Security" <no-reply@binance-loan.com>',
-        to: normalizedEmail,
-        subject: `${newCode} is your new Binance Loan verification code`,
-        text: `Your new verification code is: ${newCode}`,
-        html: `<p>Your new verification code is: <strong>${newCode}</strong></p>`,
-      });
-      const testUrl = nodemailer.getTestMessageUrl(info);
-      if (testUrl) previewUrl = testUrl.toString();
-    } catch (e) {
-      console.error('Failed to send resend email', e);
-    }
+    console.log(`[Binance Loan Auth] Resent verification code for ${normalizedEmail}: ${newCode}`);
 
     return res.json({
       success: true,
       message: 'A new verification code has been dispatched.',
       expiresAt: pending.expiresAt,
-      previewUrl,
-      codePreview: newCode,
     });
   } catch (error: any) {
     return res.status(500).json({ error: 'Failed to resend verification code.' });
@@ -858,7 +764,7 @@ app.post('/api/auth/verify-email', (req, res) => {
     // STRICT SECURITY RULE: All accounts created via public registration or verification
     // ALWAYS start with role: 'user'. They NEVER automatically receive admin privileges.
     const newAccount: UserAccount = {
-      id: 'usr_' + crypto.randomBytes(8).toString('hex'),
+      id: generateNumericUID(),
       email: normalizedEmail,
       role: 'user', // STRICT: Every newly registered account starts with 'user' role
       passwordHash: pending.passwordHash,
@@ -874,6 +780,33 @@ app.post('/api/auth/verify-email', (req, res) => {
     verifiedUsers.set(normalizedEmail, newAccount);
     // Delete pending record
     pendingRegistrations.delete(normalizedEmail);
+
+    // Sync to Supabase profiles if configured
+    if (isServerSupabaseConfigured()) {
+      const supabase = getServerSupabase();
+      if (supabase) {
+        supabase
+          .from('profiles')
+          .upsert({
+            id: newAccount.id,
+            email: normalizedEmail,
+            role: newAccount.role,
+            country_id: newAccount.countryId || 'us',
+            language_code: newAccount.languageCode || 'en',
+            kyc_status: newAccount.kycStatus,
+            borrowing_limit: newAccount.borrowingLimit,
+            verified_at: newAccount.verifiedAt,
+            created_at: newAccount.createdAt,
+          }, { onConflict: 'email' })
+          .then(
+            ({ error }: any) => {
+              if (error) console.warn('[Supabase Sync] Profile upsert warning:', error.message);
+              else console.log(`[Supabase Sync] Profile synced for ${normalizedEmail}`);
+            },
+            (err: any) => console.warn('[Supabase Sync] Error:', err)
+          );
+      }
+    }
 
     // Issue cryptographic session token
     const sessionToken = 'tok_' + crypto.randomBytes(32).toString('hex');
@@ -1677,6 +1610,50 @@ app.post('/api/user/loan-application/submit', (req, res) => {
 
     loanApplications.set(appId, newApp);
 
+    // Sync to Supabase if configured
+    if (isServerSupabaseConfigured()) {
+      const supabase = getServerSupabase();
+      if (supabase) {
+        supabase
+          .from('loan_applications')
+          .insert({
+            id: appId,
+            user_id: authenticatedUser.id,
+            user_email: authenticatedUser.email,
+            requested_amount: newApp.requestedAmount,
+            currency: newApp.currency,
+            term_months: newApp.termMonths,
+            loan_purpose: newApp.loanPurpose,
+            needs_explanation: newApp.needsExplanation,
+            funds_usage_breakdown: newApp.fundsUsageBreakdown,
+            employment_status: newApp.employmentStatus,
+            employer_name: newApp.employerName,
+            job_title: newApp.jobTitle,
+            industry: newApp.industry,
+            experience_years: newApp.experienceYears,
+            monthly_income: newApp.monthlyIncome,
+            income_source: newApp.incomeSource,
+            monthly_expenses: newApp.monthlyExpenses,
+            existing_debt_obligations: newApp.existingDebtObligations,
+            total_liabilities: newApp.totalLiabilities,
+            credit_standing_estimate: newApp.creditStandingEstimate,
+            collateral_pledge_type: newApp.collateralPledgeType,
+            source_of_funds_attestation: newApp.sourceOfFundsAttestation,
+            accuracy_confirmed: newApp.accuracyConfirmed,
+            applicant_legal_signature: newApp.applicantLegalSignature,
+            status: newApp.status,
+            submitted_at: newApp.submittedAt,
+          })
+          .then(
+            ({ error }: any) => {
+              if (error) console.warn('[Supabase Sync] Application insert warning:', error.message);
+              else console.log(`[Supabase Sync] Application ${appId} inserted to Supabase.`);
+            },
+            (e: any) => console.warn('[Supabase Sync] Application insert error:', e)
+          );
+      }
+    }
+
     console.log(`[Underwriting] New loan application ${appId} submitted by ${authenticatedUser.email} for ${requestedAmount} ${currency}. Underwriting in progress.`);
 
     return res.json({
@@ -1751,8 +1728,22 @@ app.post('/api/admin/loan-applications/:id/review', requireAdmin, (req, res) => 
     const { id } = req.params;
     const { status, reviewNotes } = req.body;
 
-    if (!status || !['under_review', 'approved', 'declined', 'requires_more_info'].includes(status)) {
-      return res.status(400).json({ error: 'Invalid review status. Allowed: "under_review", "approved", "declined", "requires_more_info".' });
+    const allowedStatuses = [
+      'draft',
+      'submitted',
+      'under_review',
+      'additional_info_required',
+      'requires_more_info',
+      'approved',
+      'rejected',
+      'declined',
+      'cancelled',
+    ];
+
+    if (!status || !allowedStatuses.includes(status)) {
+      return res.status(400).json({
+        error: `Invalid review status. Allowed: ${allowedStatuses.join(', ')}.`,
+      });
     }
 
     const appRecord = loanApplications.get(id);
@@ -1760,10 +1751,34 @@ app.post('/api/admin/loan-applications/:id/review', requireAdmin, (req, res) => 
       return res.status(404).json({ error: 'Loan application not found.' });
     }
 
+    // Normalize additional_info_required and rejected
     appRecord.status = status;
     appRecord.reviewedAt = new Date().toISOString();
     appRecord.reviewedBy = (req as any).user.email;
     appRecord.reviewNotes = reviewNotes || `Application status set to ${status} by Compliance Underwriter.`;
+
+    // Sync to Supabase if configured
+    if (isServerSupabaseConfigured()) {
+      const supabase = getServerSupabase();
+      if (supabase) {
+        supabase
+          .from('loan_applications')
+          .update({
+            status,
+            review_notes: appRecord.reviewNotes,
+            reviewed_by: appRecord.reviewedBy,
+            reviewed_at: appRecord.reviewedAt,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', id)
+          .then(
+            ({ error }: any) => {
+              if (error) console.warn('[Supabase Sync] Application review sync warning:', error.message);
+            },
+            (e: any) => console.warn('[Supabase Sync] Application review sync error:', e)
+          );
+      }
+    }
 
     console.log(`[Underwriting Review] Admin ${(req as any).user.email} updated application ${id} to ${status}`);
 
@@ -1774,6 +1789,111 @@ app.post('/api/admin/loan-applications/:id/review', requireAdmin, (req, res) => 
     });
   } catch (err: any) {
     return res.status(500).json({ error: 'Failed to review loan application.' });
+  }
+});
+
+// 16b. API: User Cancel Loan Application (Owner Only)
+app.post('/api/user/loan-applications/:id/cancel', requireAuth, (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = (req as any).user as UserAccount;
+
+    const appRecord = loanApplications.get(id);
+    if (!appRecord) {
+      return res.status(404).json({ error: 'Loan application not found.' });
+    }
+
+    if (appRecord.userEmail.toLowerCase() !== user.email.toLowerCase()) {
+      return res.status(403).json({ error: 'You are only authorized to cancel your own applications.' });
+    }
+
+    if (appRecord.status === 'approved') {
+      return res.status(400).json({ error: 'Approved loans cannot be cancelled directly. Please contact support.' });
+    }
+
+    appRecord.status = 'cancelled';
+    appRecord.reviewNotes = 'Cancelled by applicant.';
+
+    if (isServerSupabaseConfigured()) {
+      const supabase = getServerSupabase();
+      if (supabase) {
+        supabase
+          .from('loan_applications')
+          .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+          .eq('id', id)
+          .then(
+            () => {},
+            () => {}
+          );
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: 'Loan application successfully cancelled.',
+      application: appRecord,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to cancel loan application.' });
+  }
+});
+
+// 16c. API: User Save Draft Loan Application (Owner Only)
+app.post('/api/user/loan-applications/draft', requireAuth, (req, res) => {
+  try {
+    const user = (req as any).user as UserAccount;
+    const body = req.body || {};
+
+    const appId = body.id || 'APP-' + new Date().getFullYear() + '-' + crypto.randomInt(1000, 9999).toString();
+    const existing = loanApplications.get(appId);
+
+    const draftApp: LoanApplicationRecord = {
+      id: appId,
+      userId: user.id,
+      userEmail: user.email,
+      requestedAmount: Number(body.requestedAmount) || 5000,
+      currency: body.currency || 'USDT',
+      termMonths: Number(body.termMonths) || 12,
+      loanPurpose: body.loanPurpose || 'General Liquidity',
+      needsExplanation: body.needsExplanation || '',
+      fundsUsageBreakdown: body.fundsUsageBreakdown || '',
+      employmentStatus: body.employmentStatus || 'employed',
+      employerName: body.employerName || '',
+      jobTitle: body.jobTitle || '',
+      industry: body.industry || '',
+      workAddress: body.workAddress || '',
+      experienceYears: Number(body.experienceYears) || 0,
+      experienceDetails: body.experienceDetails || '',
+      monthlyIncome: Number(body.monthlyIncome) || 0,
+      incomeSource: body.incomeSource || 'Employment Salary',
+      additionalMonthlyIncome: Number(body.additionalMonthlyIncome) || 0,
+      monthlyExpenses: Number(body.monthlyExpenses) || 0,
+      expensesBreakdown: body.expensesBreakdown || '',
+      existingDebtObligations: Number(body.existingDebtObligations) || 0,
+      totalLiabilities: Number(body.totalLiabilities) || 0,
+      existingCreditors: body.existingCreditors || '',
+      taxIdentificationNumber: body.taxIdentificationNumber || '',
+      hasBankruptcyOrLiens: Boolean(body.hasBankruptcyOrLiens),
+      bankruptcyExplanation: body.bankruptcyExplanation || '',
+      creditStandingEstimate: body.creditStandingEstimate || 'good',
+      collateralPledgeType: body.collateralPledgeType || 'Crypto Asset (BTC/ETH)',
+      sourceOfFundsAttestation: Boolean(body.sourceOfFundsAttestation),
+      additionalUnderwritingNotes: body.additionalUnderwritingNotes || '',
+      accuracyConfirmed: false,
+      applicantLegalSignature: body.applicantLegalSignature || '',
+      status: 'draft',
+      submittedAt: existing?.submittedAt || new Date().toISOString(),
+    };
+
+    loanApplications.set(appId, draftApp);
+
+    return res.json({
+      success: true,
+      message: 'Loan application draft saved successfully.',
+      application: draftApp,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to save loan application draft.' });
   }
 });
 
@@ -2019,6 +2139,297 @@ app.post('/api/admin/documents/:id/review', requireAdmin, (req, res) => {
   } catch (err: any) {
     return res.status(500).json({ error: 'Failed to update document review status.' });
   }
+});
+
+// =======================================================================
+// USER NOTIFICATIONS & ACCOUNT SETTINGS ENDPOINTS
+// =======================================================================
+
+// User read notification IDs cache: userId -> Set of read notification IDs
+const readNotificationsStore = new Map<string, Set<string>>();
+
+// User custom account settings: userId -> settings object
+interface UserAccountSettings {
+  languageCode: string;
+  countryId: string;
+  preferredCurrency: string;
+  antiPhishingCode?: string;
+  emailNotifications: boolean;
+  securityAlerts: boolean;
+  marketingUpdates: boolean;
+}
+
+const userSettingsStore = new Map<string, UserAccountSettings>();
+
+// 22. API: Get Current User Notifications (User-Specific Only)
+app.get('/api/user/notifications', requireAuth, (req, res) => {
+  try {
+    const user = (req as any).user as UserAccount;
+    const readSet = readNotificationsStore.get(user.id) || new Set<string>();
+
+    const userApps: LoanApplicationRecord[] = [];
+    loanApplications.forEach((appRecord) => {
+      if (appRecord.userEmail.toLowerCase() === user.email.toLowerCase()) {
+        userApps.push(appRecord);
+      }
+    });
+
+    const notifications: Array<{
+      id: string;
+      title: string;
+      message: string;
+      type: 'info' | 'success' | 'warning' | 'error';
+      timestamp: string;
+      read: boolean;
+      link?: string;
+    }> = [];
+
+    // System welcome notification
+    notifications.push({
+      id: `notif-welcome-${user.id}`,
+      title: 'Welcome to Binance Loan Platform',
+      message: 'Your account is securely initialized with encrypted KYC vaults and cryptographic credentials.',
+      type: 'info',
+      timestamp: user.createdAt || new Date().toISOString(),
+      read: readSet.has(`notif-welcome-${user.id}`),
+    });
+
+    // KYC status notification
+    if (user.kycStatus === 'verified') {
+      notifications.push({
+        id: `notif-kyc-verified-${user.id}`,
+        title: 'Identity Verification Approved',
+        message: 'Your Tier-2 KYC identity verification has been confirmed. Maximum borrowing capacity is unlocked.',
+        type: 'success',
+        timestamp: user.verifiedAt || new Date().toISOString(),
+        read: readSet.has(`notif-kyc-verified-${user.id}`),
+      });
+    } else if (user.kycStatus === 'pending') {
+      notifications.push({
+        id: `notif-kyc-pending-${user.id}`,
+        title: 'KYC Verification Under Review',
+        message: 'Your identity documents have been submitted to the compliance officer for review.',
+        type: 'info',
+        timestamp: new Date().toISOString(),
+        read: readSet.has(`notif-kyc-pending-${user.id}`),
+      });
+    } else {
+      notifications.push({
+        id: `notif-kyc-req-${user.id}`,
+        title: 'Complete Identity Verification',
+        message: 'Submit your government-issued ID and proof of residence to unlock institutional loan terms.',
+        type: 'warning',
+        timestamp: new Date().toISOString(),
+        read: readSet.has(`notif-kyc-req-${user.id}`),
+      });
+    }
+
+    // Dynamic notifications for each loan application
+    userApps.forEach((app) => {
+      let notifType: 'info' | 'success' | 'warning' | 'error' = 'info';
+      let title = `Loan Application #${app.id}`;
+      let message = `Your loan request for ${app.requestedAmount.toLocaleString()} ${app.currency} is currently in progress.`;
+
+      switch (app.status) {
+        case 'draft':
+          title = `Application Draft Saved: ${app.id}`;
+          message = `Draft for ${app.requestedAmount.toLocaleString()} ${app.currency} saved. Complete and submit whenever you are ready.`;
+          notifType = 'info';
+          break;
+        case 'submitted':
+        case 'under_review':
+          title = `Underwriting Review: ${app.id}`;
+          message = `Application for ${app.requestedAmount.toLocaleString()} ${app.currency} (${app.termMonths}M) is undergoing credit risk assessment.`;
+          notifType = 'info';
+          break;
+        case 'additional_info_required':
+        case 'requires_more_info':
+          title = `Action Required on ${app.id}`;
+          message = app.reviewNotes || `Underwriting requires additional proof of funds or verification documents.`;
+          notifType = 'warning';
+          break;
+        case 'approved':
+          title = `Loan Approved: ${app.id}`;
+          message = `Congratulations! Your loan of ${app.requestedAmount.toLocaleString()} ${app.currency} has been approved by credit risk.`;
+          notifType = 'success';
+          break;
+        case 'rejected':
+        case 'declined':
+          title = `Application Decision: ${app.id}`;
+          message = app.reviewNotes || `Your loan application was declined according to credit criteria.`;
+          notifType = 'error';
+          break;
+        case 'cancelled':
+          title = `Application Cancelled: ${app.id}`;
+          message = `Application for ${app.requestedAmount.toLocaleString()} ${app.currency} has been cancelled.`;
+          notifType = 'info';
+          break;
+      }
+
+      notifications.push({
+        id: `notif-app-${app.id}-${app.status}`,
+        title,
+        message,
+        type: notifType,
+        timestamp: app.reviewedAt || app.submittedAt || new Date().toISOString(),
+        read: readSet.has(`notif-app-${app.id}-${app.status}`),
+      });
+    });
+
+    // Sort by timestamp desc
+    notifications.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    return res.json({
+      success: true,
+      notifications,
+      unreadCount: notifications.filter((n) => !n.read).length,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to retrieve notifications.' });
+  }
+});
+
+// 23. API: Mark Notification as Read
+app.post('/api/user/notifications/mark-read', requireAuth, (req, res) => {
+  try {
+    const user = (req as any).user as UserAccount;
+    const { notificationId, markAll } = req.body;
+
+    let readSet = readNotificationsStore.get(user.id);
+    if (!readSet) {
+      readSet = new Set<string>();
+      readNotificationsStore.set(user.id, readSet);
+    }
+
+    if (markAll) {
+      // Mark all up to current state
+      readSet.add(`notif-welcome-${user.id}`);
+      readSet.add(`notif-kyc-verified-${user.id}`);
+      readSet.add(`notif-kyc-pending-${user.id}`);
+      readSet.add(`notif-kyc-req-${user.id}`);
+      loanApplications.forEach((app) => {
+        if (app.userEmail.toLowerCase() === user.email.toLowerCase()) {
+          readSet!.add(`notif-app-${app.id}-${app.status}`);
+        }
+      });
+    } else if (notificationId) {
+      readSet.add(notificationId);
+    }
+
+    return res.json({ success: true, message: 'Notifications updated.' });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to update notification state.' });
+  }
+});
+
+// 24. API: Get Account Settings
+app.get('/api/user/account-settings', requireAuth, (req, res) => {
+  try {
+    const user = (req as any).user as UserAccount;
+    const customSettings = userSettingsStore.get(user.id) || {
+      languageCode: user.languageCode || 'en',
+      countryId: user.countryId || 'us',
+      preferredCurrency: 'USDT',
+      antiPhishingCode: 'BINANCE-' + user.id.slice(0, 4).toUpperCase(),
+      emailNotifications: true,
+      securityAlerts: true,
+      marketingUpdates: false,
+    };
+
+    return res.json({
+      success: true,
+      settings: {
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+        kycStatus: user.kycStatus,
+        borrowingLimit: user.borrowingLimit,
+        ...customSettings,
+      },
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to load account settings.' });
+  }
+});
+
+// 25. API: Update Account Settings
+app.post('/api/user/account-settings', requireAuth, (req, res) => {
+  try {
+    const user = (req as any).user as UserAccount;
+    const body = req.body || {};
+
+    const current = userSettingsStore.get(user.id) || {
+      languageCode: user.languageCode || 'en',
+      countryId: user.countryId || 'us',
+      preferredCurrency: 'USDT',
+      antiPhishingCode: 'BINANCE-' + user.id.slice(0, 4).toUpperCase(),
+      emailNotifications: true,
+      securityAlerts: true,
+      marketingUpdates: false,
+    };
+
+    const updated: UserAccountSettings = {
+      languageCode: body.languageCode || current.languageCode,
+      countryId: body.countryId || current.countryId,
+      preferredCurrency: body.preferredCurrency || current.preferredCurrency,
+      antiPhishingCode: body.antiPhishingCode !== undefined ? body.antiPhishingCode : current.antiPhishingCode,
+      emailNotifications: body.emailNotifications !== undefined ? Boolean(body.emailNotifications) : current.emailNotifications,
+      securityAlerts: body.securityAlerts !== undefined ? Boolean(body.securityAlerts) : current.securityAlerts,
+      marketingUpdates: body.marketingUpdates !== undefined ? Boolean(body.marketingUpdates) : current.marketingUpdates,
+    };
+
+    userSettingsStore.set(user.id, updated);
+
+    // Sync countryId and languageCode to user account in memory
+    user.countryId = updated.countryId;
+    user.languageCode = updated.languageCode;
+
+    // Sync to Supabase if configured
+    if (isServerSupabaseConfigured()) {
+      const supabase = getServerSupabase();
+      if (supabase) {
+        supabase
+          .from('profiles')
+          .update({
+            country_id: updated.countryId,
+            language_code: updated.languageCode,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('email', user.email)
+          .then(
+            () => {},
+            () => {}
+          );
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: 'Account settings updated successfully.',
+      settings: {
+        userId: user.id,
+        email: user.email,
+        ...updated,
+      },
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to update account settings.' });
+  }
+});
+
+// 26. API: Supabase Integration Status
+app.get('/api/supabase/status', (req, res) => {
+  const configured = isServerSupabaseConfigured();
+  const url = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
+  const maskedUrl = url ? url.replace(/(https?:\/\/)(.{4}).+(.{4}\.supabase\.co)/, '$1$2***$3') : null;
+
+  return res.json({
+    configured,
+    url: maskedUrl || (configured ? 'Configured via Environment' : 'Not Configured'),
+    schemaVersion: '2.0.0',
+    tables: ['profiles', 'loan_applications', 'loan_documents', 'audit_logs'],
+    storage: 'AES-256-GCM Compliance Vault + Supabase Hybrid Data Store',
+  });
 });
 
 // Setup Vite dev middleware or static serving

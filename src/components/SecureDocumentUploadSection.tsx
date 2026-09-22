@@ -570,7 +570,9 @@ export const SecureDocumentUploadSection: React.FC<SecureDocumentUploadSectionPr
                   {/* Hidden File Input */}
                   <input
                     type="file"
-                    ref={(el) => (fileInputRefs.current[def.category] = el)}
+                    ref={(el) => {
+                      fileInputRefs.current[def.category] = el;
+                    }}
                     accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
                     className="hidden"
                     disabled={readOnly || isUploadingThis}

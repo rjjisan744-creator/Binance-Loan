@@ -22,8 +22,6 @@ export default function App() {
 
   // Email verification flow states
   const [registeredEmail, setRegisteredEmail] = useState<string>('');
-  const [codePreview, setCodePreview] = useState<string | undefined>(undefined);
-  const [previewUrl, setPreviewUrl] = useState<string | null | undefined>(undefined);
   const [verifiedUser, setVerifiedUser] = useState<VerifiedUser | null>(null);
   const [authNotice, setAuthNotice] = useState<string | null>(null);
 
@@ -192,13 +190,8 @@ export default function App() {
   };
 
   // Triggered when Registration is initiated with valid email & password
-  const handleRegistrationInitiated = (
-    email: string,
-    serverData: { previewUrl?: string | null; codePreview?: string }
-  ) => {
+  const handleRegistrationInitiated = (email: string) => {
     setRegisteredEmail(email);
-    setPreviewUrl(serverData.previewUrl);
-    setCodePreview(serverData.codePreview);
     setCurrentScreen('verify-email');
     updateRouteInUrl('verify-email');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -337,8 +330,6 @@ export default function App() {
             <EmailVerificationScreen
               email={registeredEmail}
               selectedLanguage={selectedLanguage}
-              initialPreviewUrl={previewUrl}
-              initialCodePreview={codePreview}
               onVerificationComplete={handleVerificationComplete}
               onBackToRegister={handleBackToRegister}
             />

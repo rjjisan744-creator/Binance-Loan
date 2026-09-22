@@ -6,11 +6,8 @@ import {
   AlertCircle,
   RefreshCw,
   ArrowLeft,
-  ExternalLink,
-  Copy,
-  Check,
   Clock,
-  Sparkles,
+  Lock,
 } from 'lucide-react';
 import { LanguageCode } from '../types';
 import { TRANSLATIONS } from '../data/translations';
@@ -18,8 +15,6 @@ import { TRANSLATIONS } from '../data/translations';
 interface EmailVerificationScreenProps {
   email: string;
   selectedLanguage: LanguageCode;
-  initialPreviewUrl?: string | null;
-  initialCodePreview?: string;
   onVerificationComplete: (user: any) => void;
   onBackToRegister: () => void;
 }
@@ -27,8 +22,6 @@ interface EmailVerificationScreenProps {
 export const EmailVerificationScreen: React.FC<EmailVerificationScreenProps> = ({
   email,
   selectedLanguage,
-  initialPreviewUrl,
-  initialCodePreview,
   onVerificationComplete,
   onBackToRegister,
 }) => {
@@ -46,11 +39,6 @@ export const EmailVerificationScreen: React.FC<EmailVerificationScreenProps> = (
 
   // Resend cooldown countdown timer (60s)
   const [resendCooldown, setResendCooldown] = useState(60);
-
-  // Demo helpers for immediate testing
-  const [codePreview, setCodePreview] = useState<string | undefined>(initialCodePreview);
-  const [previewUrl, setPreviewUrl] = useState<string | null | undefined>(initialPreviewUrl);
-  const [copiedCode, setCopiedCode] = useState(false);
 
   useEffect(() => {
     // Focus first input on mount
@@ -157,8 +145,6 @@ export const EmailVerificationScreen: React.FC<EmailVerificationScreenProps> = (
         throw new Error(data.error || 'Failed to resend code.');
       }
 
-      setCodePreview(data.codePreview);
-      if (data.previewUrl) setPreviewUrl(data.previewUrl);
       setResendCooldown(60);
       setDigits(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
@@ -168,22 +154,6 @@ export const EmailVerificationScreen: React.FC<EmailVerificationScreenProps> = (
       setErrorMessage(err.message || 'Failed to resend code. Please try again.');
     } finally {
       setIsResending(false);
-    }
-  };
-
-  // Quick autofill from demo preview
-  const handleAutofillPreview = () => {
-    if (codePreview && codePreview.length === 6) {
-      setDigits(codePreview.split(''));
-      setErrorMessage(null);
-    }
-  };
-
-  const copyCode = () => {
-    if (codePreview) {
-      navigator.clipboard.writeText(codePreview);
-      setCopiedCode(true);
-      setTimeout(() => setCopiedCode(false), 2000);
     }
   };
 
@@ -359,71 +329,16 @@ export const EmailVerificationScreen: React.FC<EmailVerificationScreenProps> = (
           </p>
         </div>
 
-        {/* Live Email Dispatch Box (Transparency / Sandbox Testing helper) */}
-        {codePreview && (
-          <div
-            id="live-email-dispatch-box"
-            className="mt-6 rounded-xl border border-[#F0B90B]/30 bg-[#F0B90B]/5 p-3.5 text-xs"
-          >
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center space-x-1.5 font-bold text-[#F0B90B]">
-                <Sparkles className="h-3.5 w-3.5" />
-                <span>{t.previewEmailBoxTitle}</span>
-              </div>
-              <span className="rounded bg-[#F0B90B]/20 px-1.5 py-0.5 text-[10px] font-mono text-[#F0B90B]">
-                Live Nodemailer
-              </span>
-            </div>
-            <p className="text-[#848E9C] text-[11px] leading-relaxed mb-3">
-              {t.previewEmailBoxDesc}
-            </p>
-
-            <div className="flex items-center justify-between rounded-lg bg-[#0B0E11] border border-[#2B313A] p-2.5">
-              <div>
-                <span className="text-[10px] uppercase tracking-wider text-[#848E9C] block">
-                  Dispatched Code:
-                </span>
-                <span className="font-mono text-base font-extrabold text-[#F0B90B] tracking-widest">
-                  {codePreview}
-                </span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <button
-                  type="button"
-                  id="autofill-preview-code-btn"
-                  onClick={handleAutofillPreview}
-                  className="rounded-md bg-[#F0B90B] px-2.5 py-1 text-[11px] font-bold text-black hover:bg-[#FCD535] transition-colors"
-                >
-                  Auto-fill Code
-                </button>
-                <button
-                  type="button"
-                  id="copy-preview-code-btn"
-                  onClick={copyCode}
-                  className="rounded-md border border-[#2B313A] p-1 text-[#848E9C] hover:text-[#EAECEF] transition-colors"
-                  title="Copy code"
-                >
-                  {copiedCode ? <Check className="h-3.5 w-3.5 text-[#0ECB81]" /> : <Copy className="h-3.5 w-3.5" />}
-                </button>
-              </div>
-            </div>
-
-            {previewUrl && (
-              <div className="mt-2.5 text-right">
-                <a
-                  href={previewUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  id="open-webmail-preview-link"
-                  className="inline-flex items-center space-x-1 text-[11px] text-[#F0B90B] hover:underline"
-                >
-                  <span>Open sent email in Ethereal webmail</span>
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-              </div>
-            )}
+        {/* Production Security & Confidentiality Notice */}
+        <div className="mt-6 rounded-xl border border-[#2B313A] bg-[#0B0E11] p-3.5 text-xs text-[#848E9C] space-y-1.5">
+          <div className="flex items-center space-x-1.5 font-semibold text-[#EAECEF]">
+            <Lock className="h-3.5 w-3.5 text-[#F0B90B]" />
+            <span>Security Verification</span>
           </div>
-        )}
+          <p className="text-[11px] leading-relaxed">
+            Never disclose your 6-digit code to anyone. Binance employees and automated support agents will never ask for your verification code or password.
+          </p>
+        </div>
       </div>
     </div>
   );

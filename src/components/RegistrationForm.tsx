@@ -17,7 +17,7 @@ import { TRANSLATIONS } from '../data/translations';
 interface RegistrationFormProps {
   selectedCountry: Country | null;
   selectedLanguage: LanguageCode;
-  onRegistrationSuccess: (email: string, serverData: { previewUrl?: string | null; codePreview?: string }) => void;
+  onRegistrationSuccess: (email: string) => void;
   onSwitchToLogin: () => void;
 }
 
@@ -118,10 +118,7 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
       }
 
       // Do NOT create the account yet - transition directly to Email Verification screen
-      onRegistrationSuccess(email.trim().toLowerCase(), {
-        previewUrl: data.previewUrl,
-        codePreview: data.codePreview,
-      });
+      onRegistrationSuccess(email.trim().toLowerCase());
     } catch (err: any) {
       setErrorMessage(err.message || 'An unexpected error occurred during registration.');
     } finally {

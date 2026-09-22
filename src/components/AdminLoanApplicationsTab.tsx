@@ -383,7 +383,7 @@ export const AdminLoanApplicationsTab: React.FC<AdminLoanApplicationsTabProps> =
                               <span className="text-[#848E9C] block">11. Existing Financial Obligations:</span>
                               <div className="text-[#EAECEF]">
                                 <p>Monthly Debt Service: <strong className="font-mono text-[#F6465D]">${app.existingDebtObligations.toLocaleString()}</strong></p>
-                                <p>Total Outstanding Liabilities: <strong className="font-mono">${app.totalLiabilities.toLocaleString()}</strong></p>
+                                <p>Total Outstanding Liabilities: <strong className="font-mono">${(app.totalLiabilities ?? 0).toLocaleString()}</strong></p>
                                 {app.existingCreditors && <p className="text-[#848E9C]">Creditors: {app.existingCreditors}</p>}
                               </div>
                             </div>

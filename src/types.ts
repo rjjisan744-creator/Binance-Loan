@@ -81,7 +81,16 @@ export interface VerifiedUser {
   borrowingLimit: number;
 }
 
-export type LoanApplicationStatus = 'submitted' | 'under_review' | 'approved' | 'declined' | 'requires_more_info';
+export type LoanApplicationStatus =
+  | 'draft'
+  | 'submitted'
+  | 'under_review'
+  | 'additional_info_required'
+  | 'requires_more_info'
+  | 'approved'
+  | 'rejected'
+  | 'declined'
+  | 'cancelled';
 
 export interface LoanApplication {
   id: string;
@@ -104,10 +113,10 @@ export interface LoanApplication {
   employerName: string;
   jobTitle: string;
   industry: string;
-  workAddress: string;
+  workAddress?: string;
   // 8. Work/business experience
   experienceYears: number;
-  experienceDetails: string;
+  experienceDetails?: string;
   // 9. Monthly income
   monthlyIncome: number;
   incomeSource: string;
@@ -117,11 +126,11 @@ export interface LoanApplication {
   expensesBreakdown?: string;
   // 11. Existing financial obligations
   existingDebtObligations: number;
-  totalLiabilities: number;
+  totalLiabilities?: number;
   existingCreditors?: string;
   // 12. Other relevant information required for lawful underwriting
-  taxIdentificationNumber: string;
-  hasBankruptcyOrLiens: boolean;
+  taxIdentificationNumber?: string;
+  hasBankruptcyOrLiens?: boolean;
   bankruptcyExplanation?: string;
   creditStandingEstimate: 'excellent' | 'good' | 'fair' | 'poor' | 'not_sure';
   collateralPledgeType: string;
@@ -277,4 +286,29 @@ export interface AppTranslations {
   // Session & Success
   sessionSavedSuccess: string;
   activeProfile: string;
+}
+
+export interface UserNotification {
+  id: string;
+  title: string;
+  message: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+  timestamp: string;
+  read: boolean;
+  link?: string;
+}
+
+export interface UserAccountSettings {
+  userId: string;
+  email: string;
+  role: UserRole;
+  kycStatus: KycStatus;
+  borrowingLimit: number;
+  languageCode: string;
+  countryId: string;
+  preferredCurrency: string;
+  antiPhishingCode?: string;
+  emailNotifications: boolean;
+  securityAlerts: boolean;
+  marketingUpdates: boolean;
 }

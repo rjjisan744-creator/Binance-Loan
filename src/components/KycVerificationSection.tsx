@@ -131,16 +131,6 @@ export const KycVerificationSection: React.FC<KycVerificationSectionProps> = ({
     reader.readAsDataURL(file);
   };
 
-  // Attach a pre-verified Specimen Document for instant verification testing
-  const attachSpecimenDocument = () => {
-    setDocumentFileName(`${docType}_official_specimen.jpg`);
-    setDocumentFront('https://images.unsplash.com/photo-1544717305-2782549b5136?w=600&auto=format&fit=crop&q=80');
-    if (docType !== 'passport') {
-      setDocumentBack('https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=600&auto=format&fit=crop&q=80');
-    }
-    setErrorMessage(null);
-  };
-
   // Biometric Facial Liveness Scan Simulation
   const triggerFacialLivenessScan = () => {
     setIsScanningBiometrics(true);
@@ -789,18 +779,9 @@ export const KycVerificationSection: React.FC<KycVerificationSectionProps> = ({
           {/* STEP 3: ID DOCUMENT UPLOAD */}
           {currentStep === 3 && (
             <div className="space-y-5">
-              <div className="rounded-xl bg-[#0B0E11] p-3 border border-[#2B313A] text-xs text-[#848E9C] flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <Upload className="h-4 w-4 text-[#F0B90B] shrink-0" />
-                  <span>Upload high-resolution images of your official document (Front & Back where applicable).</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={attachSpecimenDocument}
-                  className="rounded bg-[#2B313A] hover:bg-[#F0B90B]/20 hover:text-[#F0B90B] px-2.5 py-1 text-[11px] font-bold text-[#EAECEF] transition-colors cursor-pointer"
-                >
-                  Use Official Specimen
-                </button>
+              <div className="rounded-xl bg-[#0B0E11] p-3.5 border border-[#2B313A] text-xs text-[#848E9C] flex items-center space-x-2.5">
+                <Upload className="h-4 w-4 text-[#F0B90B] shrink-0" />
+                <span>Upload high-resolution images or scans of your official government-issued document (Front & Back where applicable). Maximum file size: 15MB.</span>
               </div>
 
               {/* Upload Boxes Grid */}
