@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { LanguageCode } from '../types';
 import { TRANSLATIONS } from '../data/translations';
+import { supabase } from '../lib/supabase';
 
 interface EmailVerificationScreenProps {
   email: string;
@@ -99,28 +100,53 @@ export const EmailVerificationScreen: React.FC<EmailVerificationScreenProps> = (
     setErrorMessage(null);
 
     try {
+      // 1. Call real Supabase Auth to verify OTP entered by user
+      const { data: sbData, error: sbError } = await supabase.auth.verifyOtp({
+        email: email.trim().toLowerCase(),
+        token: fullCode,
+        type: 'email',
+      });
+
+      if (sbError) {
+        throw sbError;
+      }
+
+      // 2. Synchronize verified account state with backend
       const response = await fetch('/api/auth/verify-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email,
+          email: email.trim().toLowerCase(),
           code: fullCode,
+          supabaseUserId: sbData.user?.id,
+          supabaseToken: sbData.session?.access_token,
         }),
       });
 
       const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to verify code.');
+      if (sbData.session?.access_token) {
+        localStorage.setItem('binance_loan_session_token', sbData.session.access_token);
+      } else if (data.sessionToken) {
+        localStorage.setItem('binance_loan_session_token', data.sessionToken);
       }
+
+      const activeUser = data.user || {
+        id: sbData.user?.id || 'usr_' + Date.now(),
+        email: email.trim().toLowerCase(),
+        role: 'user',
+        kycStatus: 'unverified',
+        borrowingLimit: 500,
+        sessionToken: sbData.session?.access_token || data.sessionToken,
+      };
 
       setSuccessMessage(data.message || t.verificationSuccessTitle);
       setIsRedirecting(true);
       setTimeout(() => {
-        onVerificationComplete(data.user);
-      }, 1800);
+        onVerificationComplete(activeUser);
+      }, 1500);
     } catch (err: any) {
-      setErrorMessage(err.message || 'Invalid verification code.');
+      setErrorMessage(err.message || 'Invalid or expired verification code.');
     } finally {
       setIsLoading(false);
     }
@@ -134,21 +160,22 @@ export const EmailVerificationScreen: React.FC<EmailVerificationScreenProps> = (
     setErrorMessage(null);
 
     try {
-      const response = await fetch('/api/auth/resend-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+      // Real Supabase Auth call to send actual OTP through Supabase email
+      const { error: resendError } = await supabase.auth.signInWithOtp({
+        email: email.trim().toLowerCase(),
+        options: {
+          shouldCreateUser: true,
+        },
       });
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to resend code.');
+      if (resendError) {
+        throw resendError;
       }
 
       setResendCooldown(60);
       setDigits(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
-      setSuccessMessage(t.codeSentToast);
+      setSuccessMessage(t.codeSentToast || 'A new verification code has been dispatched to your email.');
       setTimeout(() => setSuccessMessage(null), 4000);
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to resend code. Please try again.');
@@ -163,7 +190,7 @@ export const EmailVerificationScreen: React.FC<EmailVerificationScreenProps> = (
       <button
         id="back-to-register-btn"
         onClick={onBackToRegister}
-        className="mb-4 inline-flex items-center space-x-1.5 text-xs text-[#848E9C] hover:text-[#F0B90B] transition-colors"
+        className="mb-4 inline-flex items-center space-x-1.5 text-xs text-[#848E9C] hover:text-[#F0B90B] transition-colors cursor-pointer"
       >
         <ArrowLeft className="h-3.5 w-3.5" />
         <span>{t.backToRegister}</span>

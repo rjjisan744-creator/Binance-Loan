@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { Country, LanguageCode } from '../types';
 import { TRANSLATIONS } from '../data/translations';
+import { supabase } from '../lib/supabase';
 
 interface RegistrationFormProps {
   selectedCountry: Country | null;
@@ -99,6 +100,19 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
     setIsLoading(true);
 
     try {
+      // 1. Call real Supabase Auth to dispatch official OTP code to real email inbox
+      const { error: otpError } = await supabase.auth.signInWithOtp({
+        email: email.trim().toLowerCase(),
+        options: {
+          shouldCreateUser: true,
+        },
+      });
+
+      if (otpError) {
+        throw otpError;
+      }
+
+      // 2. Register pending account credentials with backend
       const response = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -111,13 +125,12 @@ export const RegistrationForm: React.FC<RegistrationFormProps> = ({
         }),
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
+        const data = await response.json();
         throw new Error(data.error || 'Failed to submit registration.');
       }
 
-      // Do NOT create the account yet - transition directly to Email Verification screen
+      // Transition to Email Verification screen
       onRegistrationSuccess(email.trim().toLowerCase());
     } catch (err: any) {
       setErrorMessage(err.message || 'An unexpected error occurred during registration.');

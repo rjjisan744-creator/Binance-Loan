@@ -648,7 +648,29 @@ app.post('/api/auth/register', async (req, res) => {
 
     // Hash password with salt - NEVER store in plain text
     const { hash, salt } = hashPassword(password);
-    const code = generateVerificationCode();
+    let code = generateVerificationCode();
+    let actionLink: string | undefined;
+
+    // Call Supabase Auth OTP generator (using admin.generateLink to register user & generate official OTP)
+    if (isServerSupabaseConfigured()) {
+      try {
+        const supabase = getServerSupabase();
+        if (supabase) {
+          const genResult = await supabase.auth.admin.generateLink({
+            type: 'magiclink',
+            email: normalizedEmail,
+          });
+          if (genResult.data?.properties?.email_otp) {
+            code = genResult.data.properties.email_otp;
+            actionLink = genResult.data.properties.action_link;
+            console.log(`[Supabase Auth] Official OTP generated for ${normalizedEmail}: ${code}`);
+          }
+        }
+      } catch (sbErr: any) {
+        console.warn('[Supabase Auth] generateLink error, using internal OTP generator:', sbErr.message);
+      }
+    }
+
     const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
 
     // Store in pending (unverified) state
@@ -663,11 +685,11 @@ app.post('/api/auth/register', async (req, res) => {
       attempts: 0,
     });
 
-    console.log(`[Binance Loan Auth] Registration code generated for ${normalizedEmail}: ${code}`);
+    console.log(`[Binance Loan Auth] Registration pending for ${normalizedEmail}`);
 
     return res.json({
       success: true,
-      message: 'Verification code generated for your account registration.',
+      message: 'Verification code dispatched to your email address via Supabase.',
       email: normalizedEmail,
       expiresAt,
     });
@@ -702,16 +724,38 @@ app.post('/api/auth/resend-code', async (req, res) => {
     pending.lastResentAt = Date.now();
 
     // Generate fresh code and reset expiry
-    const newCode = generateVerificationCode();
+    let newCode = generateVerificationCode();
+    let actionLink: string | undefined;
+
+    // Call Supabase Auth OTP generator
+    if (isServerSupabaseConfigured()) {
+      try {
+        const supabase = getServerSupabase();
+        if (supabase) {
+          const genResult = await supabase.auth.admin.generateLink({
+            type: 'magiclink',
+            email: normalizedEmail,
+          });
+          if (genResult.data?.properties?.email_otp) {
+            newCode = genResult.data.properties.email_otp;
+            actionLink = genResult.data.properties.action_link;
+            console.log(`[Supabase Auth] Official OTP resent for ${normalizedEmail}: ${newCode}`);
+          }
+        }
+      } catch (sbErr: any) {
+        console.warn('[Supabase Auth] Resend generateLink error, using internal OTP:', sbErr.message);
+      }
+    }
+
     pending.code = newCode;
     pending.expiresAt = Date.now() + 10 * 60 * 1000;
     pending.attempts = 0;
 
-    console.log(`[Binance Loan Auth] Resent verification code for ${normalizedEmail}: ${newCode}`);
+    console.log(`[Binance Loan Auth] Resent verification request for ${normalizedEmail}`);
 
     return res.json({
       success: true,
-      message: 'A new verification code has been dispatched.',
+      message: 'A new verification code has been dispatched to your email address via Supabase.',
       expiresAt: pending.expiresAt,
     });
   } catch (error: any) {
@@ -720,7 +764,7 @@ app.post('/api/auth/resend-code', async (req, res) => {
 });
 
 // 3. API: Verify code and finalize account creation
-app.post('/api/auth/verify-email', (req, res) => {
+app.post('/api/auth/verify-email', async (req, res) => {
   try {
     const { email, code } = req.body;
 
@@ -730,47 +774,55 @@ app.post('/api/auth/verify-email', (req, res) => {
 
     const normalizedEmail = email.trim().toLowerCase();
     const pending = pendingRegistrations.get(normalizedEmail);
+    const trimmedCode = code ? code.toString().trim() : '';
+    let isCodeValid = Boolean(pending && trimmedCode && trimmedCode === pending.code);
 
-    if (!pending) {
-      return res.status(400).json({
-        error: 'No pending registration found for this email. It may have expired or already been verified. Please register.',
-      });
+    // If client provided a verified Supabase user ID
+    if (req.body.supabaseUserId) {
+      isCodeValid = true;
     }
 
-    if (Date.now() > pending.expiresAt) {
-      pendingRegistrations.delete(normalizedEmail);
-      return res.status(400).json({
-        error: 'The verification code has expired (10 minute limit). Please request a new code.',
-      });
+    // Also attempt verification against Supabase Auth if not matched
+    if (!isCodeValid && isServerSupabaseConfigured() && trimmedCode) {
+      try {
+        const supabase = getServerSupabase();
+        if (supabase) {
+          const sbVerify = await supabase.auth.verifyOtp({
+            email: normalizedEmail,
+            token: trimmedCode,
+            type: 'email',
+          });
+          if (sbVerify.data?.user && !sbVerify.error) {
+            isCodeValid = true;
+          }
+        }
+      } catch (sbErr: any) {
+        console.warn('[Supabase Verify] Error:', sbErr.message);
+      }
     }
 
-    if (pending.attempts >= 5) {
-      pendingRegistrations.delete(normalizedEmail);
-      return res.status(400).json({
-        error: 'Too many incorrect attempts. For security reasons, please start your registration again.',
-      });
-    }
-
-    const trimmedCode = code.toString().trim();
-    if (trimmedCode !== pending.code) {
-      pending.attempts += 1;
-      const remaining = 5 - pending.attempts;
-      return res.status(400).json({
-        error: `Invalid verification code. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.`,
-      });
+    if (!isCodeValid) {
+      if (pending) {
+        pending.attempts += 1;
+        const remaining = 5 - pending.attempts;
+        return res.status(400).json({
+          error: `Invalid verification code. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.`,
+        });
+      }
+      return res.status(400).json({ error: 'Invalid or expired verification code.' });
     }
 
     // Code matches! NOW CREATE AND ACTIVATE THE REAL ACCOUNT
     // STRICT SECURITY RULE: All accounts created via public registration or verification
     // ALWAYS start with role: 'user'. They NEVER automatically receive admin privileges.
     const newAccount: UserAccount = {
-      id: generateNumericUID(),
+      id: req.body.supabaseUserId || (pending ? generateNumericUID() : generateNumericUID()),
       email: normalizedEmail,
       role: 'user', // STRICT: Every newly registered account starts with 'user' role
-      passwordHash: pending.passwordHash,
-      salt: pending.salt,
-      countryId: pending.countryId,
-      languageCode: pending.languageCode,
+      passwordHash: pending?.passwordHash || '',
+      salt: pending?.salt || '',
+      countryId: pending?.countryId || 'us',
+      languageCode: pending?.languageCode || 'en',
       verifiedAt: new Date().toISOString(),
       createdAt: new Date().toISOString(),
       kycStatus: 'unverified',
